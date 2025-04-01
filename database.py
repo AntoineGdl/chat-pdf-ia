@@ -1,6 +1,10 @@
 import sqlite3
 import hashlib
 from typing import List, Tuple, Dict
+
+import numpy as np
+
+from embedding_store import EmbeddingStore
 from utils import logger
 
 class Database:
@@ -161,6 +165,66 @@ class Database:
             summary += f"- {title}\n"
 
         return summary
+
+    def add_embedding_column(self):
+        """Ajoute une colonne pour stocker les embeddings"""
+        cursor = self.conn.cursor()
+        cursor.execute("PRAGMA table_info(sections)")
+        columns = cursor.fetchall()
+        if not any(col[1] == 'embedding' for col in columns):
+            cursor.execute("ALTER TABLE sections ADD COLUMN embedding BLOB")
+            self.conn.commit()
+
+    def store_section_with_embedding(self, document_id: int, title: str, content: str,
+                                     embedding_store: EmbeddingStore) -> bool:
+        """Stocke une section avec son embedding"""
+        content_hash = hashlib.md5(content.encode()).hexdigest()
+
+        # Vérifie si la section existe déjà
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT 1 FROM sections WHERE content_hash = ?", (content_hash,))
+        if cursor.fetchone():
+            return False
+
+        # Crée l'embedding
+        embedding = embedding_store.create_embedding(content)
+        embedding_bytes = embedding.tobytes()
+
+        # Stocke la nouvelle section avec embedding
+        cursor.execute(
+            "INSERT INTO sections (document_id, title, content, content_hash, embedding) VALUES (?, ?, ?, ?, ?)",
+            (document_id, title, content, content_hash, embedding_bytes)
+        )
+        self.conn.commit()
+        return True
+
+    def semantic_search(self, query: str, embedding_store: EmbeddingStore, limit: int = 5) -> List[Dict]:
+        """Recherche sémantique basée sur les embeddings"""
+        query_embedding = embedding_store.create_embedding(query)
+
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "SELECT s.id, d.filename, s.title, s.content, s.embedding FROM sections s JOIN documents d ON s.document_id = d.id")
+        results = []
+
+        for section_id, filename, title, content, embedding_bytes in cursor.fetchall():
+            if embedding_bytes:
+                try:
+                    section_embedding = np.frombuffer(embedding_bytes, dtype=np.float32)
+                    similarity = embedding_store.calculate_similarity(query_embedding, section_embedding)
+
+                    if similarity > 0.3:  # Seuil de similarité
+                        results.append({
+                            'id': section_id,
+                            'filename': filename,
+                            'title': title,
+                            'content': content,
+                            'relevance': float(similarity)
+                        })
+                except Exception as e:
+                    print(f"Erreur lors du calcul de similarité: {str(e)}")
+
+        return sorted(results, key=lambda x: x['relevance'], reverse=True)[:limit]
 
     def close(self):
         """Ferme la connexion à la base de données"""
