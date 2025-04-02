@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Assistant Documentation IA</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Assistant Documentation IA</h1>
+        </header>
+
+        <div class="control-panel">
+            <button id="reload-btn">Recharger la documentation</button>
+            <div id="stats" class="stats">Chargement des statistiques...</div>
+        </div>
+
+        <div class="chat-container">
+            <div id="chat-messages" class="chat-messages">
+                <div class="message system">
+                    Bienvenue dans l'Assistant Documentation IA. Posez vos questions sur la documentation.
+                </div>
+            </div>
+
+            <div class="chat-input">
+                <input type="text" id="question-input" placeholder="Posez votre question ici..." autocomplete="off">
+                <button id="send-btn">Envoyer</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>

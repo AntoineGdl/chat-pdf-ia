@@ -6,6 +6,7 @@ import numpy as np
 
 from embedding_store import EmbeddingStore
 from utils import logger
+import threading
 
 class Database:
     """Gestion de la base de données SQLite"""
@@ -14,8 +15,21 @@ class Database:
         self.db_path = db_path
         self.conn = sqlite3.connect(db_path)
         self._create_tables()
+        self.lock = threading.Lock()
+        self._connect()
         # logger.info(f"Base de données initialisée : {db_path}")
 
+    def _connect(self):
+        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)  # Ajouter ce paramètre
+        # Reste du code d'initialisation...
+
+    def get_sections_count(self):
+        with self.lock:  # Utiliser un verrou pour éviter les accès simultanés
+            cursor = self.conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM sections")
+            count = cursor.fetchone()[0]
+            return count
+    
     def _create_tables(self) -> None:
         """Crée les tables nécessaires"""
         cursor = self.conn.cursor()
@@ -86,55 +100,57 @@ class Database:
 
     def search_sections(self, query: str, limit: int = 5) -> List[Dict]:
         """Recherche des sections pertinentes"""
-        words = query.lower().split()
-        results = []
-        cursor = self.conn.cursor()
+        with self.lock:
+            cursor = self.conn.cursor()
+            words = query.lower().split()
+            results = []
+            cursor = self.conn.cursor()
 
-        # logger.info(f"Recherche avec {len(words)} mots-clés: {', '.join(words)}")
+            # logger.info(f"Recherche avec {len(words)} mots-clés: {', '.join(words)}")
 
-        for word in words:
-            if len(word) < 3:  # Ignorer les mots trop courts
-                continue
+            for word in words:
+                if len(word) < 3:  # Ignorer les mots trop courts
+                    continue
 
-            # logger.info(f"Recherche du mot-clé '{word}'...")
-            cursor.execute("""
-                SELECT s.id, d.filename, s.title, s.content
-                FROM sections s
-                JOIN documents d ON s.document_id = d.id
-                WHERE lower(s.content) LIKE ? OR lower(s.title) LIKE ?
-                """, (f'%{word}%', f'%{word}%'))
+                # logger.info(f"Recherche du mot-clé '{word}'...")
+                cursor.execute("""
+                    SELECT s.id, d.filename, s.title, s.content
+                    FROM sections s
+                    JOIN documents d ON s.document_id = d.id
+                    WHERE lower(s.content) LIKE ? OR lower(s.title) LIKE ?
+                    """, (f'%{word}%', f'%{word}%'))
 
-            found = cursor.fetchall()
-            if found:
-                # logger.info(f"Trouvé {len(found)} sections contenant '{word}'")
-                for section_id, filename, title, content in found:
-                    results.append({
-                        'id': section_id,
-                        'filename': filename,
-                        'title': title,
-                        'content': content,
-                        'relevance': 1  # On pourrait améliorer avec un score de pertinence
-                    })
-            else:
-                logger.info(f"Aucune section trouvée contenant '{word}'")
+                found = cursor.fetchall()
+                if found:
+                    # logger.info(f"Trouvé {len(found)} sections contenant '{word}'")
+                    for section_id, filename, title, content in found:
+                        results.append({
+                            'id': section_id,
+                            'filename': filename,
+                            'title': title,
+                            'content': content,
+                            'relevance': 1  # On pourrait améliorer avec un score de pertinence
+                        })
+                else:
+                    logger.info(f"Aucune section trouvée contenant '{word}'")
 
-        # Déduplique et trie par pertinence
-        unique_results = {}
-        for result in results:
-            if result['id'] not in unique_results:
-                unique_results[result['id']] = result
-            else:
-                unique_results[result['id']]['relevance'] += 1
+            # Déduplique et trie par pertinence
+            unique_results = {}
+            for result in results:
+                if result['id'] not in unique_results:
+                    unique_results[result['id']] = result
+                else:
+                    unique_results[result['id']]['relevance'] += 1
 
-        # Trie par score de pertinence et limite les résultats
-        sorted_results = sorted(
-            unique_results.values(),
-            key=lambda x: x['relevance'],
-            reverse=True
-        )[:limit]
+            # Trie par score de pertinence et limite les résultats
+            sorted_results = sorted(
+                unique_results.values(),
+                key=lambda x: x['relevance'],
+                reverse=True
+            )[:limit]
 
-        # logger.info(f"Total: {len(sorted_results)} sections pertinentes (limité à {limit})")
-        return sorted_results
+            # logger.info(f"Total: {len(sorted_results)} sections pertinentes (limité à {limit})")
+            return sorted_results
 
     def get_knowledge_summary(self) -> str:
         """Génère un résumé des connaissances disponibles dans la base de données"""
