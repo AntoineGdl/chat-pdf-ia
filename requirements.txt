@@ -3,3 +3,4 @@ ollama~=0.4.7
 fitz~=0.0.1.dev2
 numpy~=2.2.4
 sentence-transformers~=4.0.1
+Flask~=2.3.3
